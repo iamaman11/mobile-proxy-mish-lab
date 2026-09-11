@@ -13,16 +13,27 @@ if (-not $python) {
     throw 'Python 3 is required. Install Python or place it on PATH.'
 }
 
-function Invoke-MishLabPython {
-    param([string[]]$Arguments)
-    $entry = Join-Path $repoRoot 'mish_lab.py'
+function Invoke-MishPythonEntry {
+    param([string]$Entry, [string[]]$Arguments)
     if ($python.Name -eq 'py.exe' -or $python.Name -eq 'py') {
-        & $python.Source -3 $entry @Arguments | Out-Host
+        & $python.Source -3 $Entry @Arguments | Out-Host
     } else {
-        & $python.Source $entry @Arguments | Out-Host
+        & $python.Source $Entry @Arguments | Out-Host
     }
     $code = $LASTEXITCODE
     return $code
+}
+
+function Invoke-MishLabPython {
+    param([string[]]$Arguments)
+    $entry = Join-Path $repoRoot 'mish_lab.py'
+    return Invoke-MishPythonEntry -Entry $entry -Arguments $Arguments
+}
+
+function Invoke-MishProductPhysicalE3 {
+    param([string[]]$Arguments)
+    $entry = Join-Path $repoRoot 'product_physical_e3.py'
+    return Invoke-MishPythonEntry -Entry $entry -Arguments $Arguments
 }
 
 function Resolve-MishLabAdb {
@@ -107,6 +118,14 @@ if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
         if ($productInstalled) {
             Start-MishExactProduct
         }
+
+        $code = Invoke-MishLabPython @('submit')
+        exit $code
+    }
+
+    if ($current.execution -eq 'product_physical_e3') {
+        $code = Invoke-MishProductPhysicalE3 @('execute')
+        if ($code -ne 0) { exit $code }
 
         $code = Invoke-MishLabPython @('submit')
         exit $code
