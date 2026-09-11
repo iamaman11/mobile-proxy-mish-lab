@@ -144,7 +144,7 @@ jobs:
           esac
           rustup toolchain install 1.98.1 --profile minimal
           (cd product && rustup override set 1.98.1)
-          rustup target add "$RUST_TARGET"
+          rustup target add --toolchain 1.98.1 "$RUST_TARGET"
           cargo install cargo-ndk --version 4.1.2 --locked
           echo "MISH_TARGET_ABI=$TARGET_ABI" >> "$GITHUB_ENV"
           echo "MISH_RUST_TARGET=$RUST_TARGET" >> "$GITHUB_ENV"
