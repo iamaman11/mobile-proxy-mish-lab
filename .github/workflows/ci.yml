@@ -51,12 +51,16 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK 36 + NDK
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK root is not configured}}"
-          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
 
       - name: Build ready Android probe
         run: gradle --no-daemon -p templates/android-device-facts :app:assembleDebug
@@ -76,6 +80,7 @@ jobs:
               'lab_sha': os.environ['GITHUB_SHA'],
               'package': 'com.mobileproxymish.lab.devicefacts',
               'activity': 'com.mobileproxymish.lab.devicefacts/.MainActivity',
+              'capabilities': ['device_facts', 'network_bind_matrix'],
               'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
           }
           Path('dist/probe.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
