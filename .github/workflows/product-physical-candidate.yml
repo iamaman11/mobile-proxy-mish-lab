@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   build:
-    if: startsWith(github.event.issue.title, '[LAB TASK')
+    if: >-
+      startsWith(github.event.issue.title, '[LAB TASK') &&
+      contains(github.event.issue.body, 'product_physical_e3')
     runs-on: ubuntu-latest
     outputs:
       task_id: ${{ steps.task.outputs.task_id }}
@@ -267,7 +269,7 @@ jobs:
           PY
 
       - name: Upload immutable physical candidate artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.task.outputs.artifact_name }}
           path: dist/
