@@ -1,9 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
-        android:label="MISH Lab Device Facts"
+        android:label="MISH Lab Observer"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"
