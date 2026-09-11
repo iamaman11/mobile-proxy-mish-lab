@@ -1,45 +1,82 @@
 # MISH Lab
 
-Local Android research workspace for `iamaman11/mobile-proxy-mish`.
+Simple local Android research workspace for `iamaman11/mobile-proxy-mish`.
 
-Purpose: make physical Android research boring and repeatable for the local agent.
-
-One loop:
+The normal path is intentionally short:
 
 ```text
-GitHub Issue task -> mish-lab work -> local build/run/research -> result.json -> mish-lab submit -> GitHub Issue result
+GitHub LAB task -> mish-lab next -> prebuilt probe -> phone -> mish-lab submit -> GitHub result
 ```
 
-## Operator commands
+The local agent does **not** build Android code for ordinary observations. CI builds the reusable LAB probe once and publishes it as the `mish-lab-ready-probe` artifact. `mish-lab next` downloads the artifact matching the exact LAB commit, verifies it, and prepares the task.
+
+## Normal operator flow
 
 ```powershell
+.\mish-lab.ps1 update
 .\mish-lab.ps1 doctor
-.\mish-lab.ps1 work <issue-number>
-.\mish-lab.ps1 probe build
-.\mish-lab.ps1 probe run
-.\mish-lab.ps1 status
+.\mish-lab.ps1 next
+.\mish-lab.ps1 run
 .\mish-lab.ps1 submit
 ```
 
-`doctor` checks the host and the currently attached Android device.
+`doctor` requires only Git, GitHub CLI, ADB and exactly one attached Android device. Java/Gradle/Rust are reported as optional capabilities and are needed only for local development experiments.
 
-`work` downloads one LAB task from a GitHub Issue, verifies its basic contract, creates `C:\mish-lab\work\<task-id>`, and prepares the built-in Android probe when requested.
+`next` reads the oldest open `[LAB TASK ...]` Issue, verifies any exact product APK named by the task, creates `C:\mish-lab\work\<task-id>`, and downloads the prebuilt LAB probe when the task uses the standard observer.
 
-`probe build` builds the research-only APK from the workspace.
+`run` installs/updates only `com.mobileproxymish.lab.devicefacts`, runs it on the attached phone and writes the compact typed `result.json`.
 
-`probe run` installs only the LAB package, runs it, reads a small JSON result through `run-as`, and writes `result.json` in the workspace.
+`submit` posts that result to the task Issue, closes the Issue and releases the phone lock.
 
-`submit` posts the compact result back to the same Issue.
+## When the ready probe is not enough
 
-## Boundaries
+For a one-off custom research probe the agent can use:
 
-MISH Lab is research tooling, not a second product control plane. Product source/releases remain in `iamaman11/mobile-proxy-mish`. Runtime truth remains on Android. LAB raw work stays local.
+```powershell
+.\mish-lab.ps1 build
+```
 
-For now the only hard rules are practical ones:
+This copies the research template into the current workspace and builds it locally. This is the exception, not the default.
 
-- do not overwrite the product APK from a LAB task;
-- do not store credentials/keystores/device identifiers in this repository;
-- serialize work on the single physical phone with one local lock;
-- return compact machine-readable results instead of raw logs.
+For experiments that need the real product source path, use a Product Sandbox task and:
 
-The repository may remain public while it contains only code/contracts. No secret material belongs here.
+```powershell
+.\mish-lab.ps1 sandbox prepare
+.\mish-lab.ps1 sandbox build
+.\mish-lab.ps1 sandbox run
+```
+
+Product Sandbox checks out the exact requested `mobile-proxy-mish` SHA into the task workspace and changes only the disposable Android `applicationId` to:
+
+```text
+com.mobileproxymish.lab.product
+```
+
+so it can be installed beside the real product APK. The source copy is disposable and may be freely edited by the local agent for research.
+
+## What stays separate
+
+```text
+com.mobileproxymish.app
+    exact product / RC / E3
+
+com.mobileproxymish.lab.devicefacts
+    reusable prebuilt observer
+
+com.mobileproxymish.lab.product
+    disposable Product Sandbox
+```
+
+If a question fundamentally requires the exact production UID/signature relationship, a separately signed product-target observer is still required. Do not use Product Sandbox as proof of a production-UID-specific fact.
+
+## Local layout
+
+```text
+C:\mish-lab\
+  cache\       downloaded product APKs and ready probes
+  work\        task workspaces owned by the local agent
+  results\     submitted typed results
+  locks\       single DEVICE-1 lock
+```
+
+The GitHub repository contains infrastructure and task contracts. Raw phone logs and temporary experiments remain local unless a task explicitly turns a useful capability into reusable LAB code.
