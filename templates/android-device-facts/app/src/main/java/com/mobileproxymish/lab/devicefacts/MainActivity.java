@@ -40,7 +40,7 @@ public final class MainActivity extends Activity {
     private void writeResult() {
         String mode = getIntent().getStringExtra("mish_lab_mode");
         if (mode == null || mode.isBlank()) {
-            mode = MODE_DEVICE_FACTS;
+            mode = MODE_NETWORK_BIND_MATRIX;
         }
 
         boolean wifiPresent = false;
