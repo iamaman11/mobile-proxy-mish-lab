@@ -265,7 +265,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
-          TASK_ID: ${{ steps.request.outputs.task_id }}
           REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
           ARTIFACT_NAME: ${{ steps.request.outputs.artifact_name }}
           PRODUCT_SHA: ${{ steps.package.outputs.product_sha256 }}
@@ -286,3 +285,23 @@ jobs:
           Scope: physical test candidate only; not a Release and not product source of truth.
           EOF
           gh issue comment 11 --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-comment.md"
+
+      - name: Record terminal hosted build failure
+        if: ${{ failure() && steps.request.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/candidate-failed.md" <<EOF
+          PRODUCT_PHYSICAL_CANDIDATE=FAILED
+
+          \`REQUEST_COMMENT_ID=$REQUEST_COMMENT_ID\`
+          \`SOURCE_SHA=$SOURCE_SHA\`
+          \`BUILD_RUN_ID=$GITHUB_RUN_ID\`
+
+          Hosted candidate build failed closed. No physical acceptance may be inferred.
+          EOF
+          gh issue comment 11 --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-failed.md"
