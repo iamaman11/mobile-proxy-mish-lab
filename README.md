@@ -26,10 +26,10 @@ decide exact green iamaman11/mobile-proxy-mish/main SHA
 -> GitHub-hosted builder validates source/main/CI identity
 -> build app-debug.apk + app-debug-androidTest.apk once
 -> verify package/signature/native payload
--> publish candidate.json + both APKs as one Actions artifact
+-> publish candidate.json + both APKs as one LAB GitHub prerelease
 -> post READY or FAILED to Issue #11
 -> local agent runs .\mish-lab.ps1 go
--> LAB downloads and independently verifies the exact artifact
+-> LAB downloads and independently verifies the exact Release assets
 -> install/run PRODUCT physical E3 on DEVICE-1
 -> post typed RESULT back to Issue #11
 ```
@@ -46,26 +46,43 @@ A valid activation comment must:
 
 Everything else fails closed or is ignored by the activation job.
 
-The artifact name is derived from request comment ID + exact source SHA. `candidate.json` binds:
+Each valid request gets one immutable LAB prerelease tag:
+
+```text
+physical-e3-req-<GitHub-comment-id>
+```
+
+That prerelease is the canonical long-lived binary store for the physical candidate and contains exactly:
+
+```text
+app-debug.apk
+app-debug-androidTest.apk
+candidate.json
+```
+
+`candidate.json` binds:
 
 - permanent control Issue number;
 - immutable request comment ID;
 - exact PRODUCT source SHA;
 - LAB workflow SHA and build run;
+- LAB prerelease tag;
 - PRODUCT/test package names;
 - instrumentation runner/test class;
 - target ABI;
 - SHA-256 of PRODUCT APK and androidTest APK;
 - signing-certificate SHA-256.
 
-The candidate is explicitly `PHYSICAL_TEST_CANDIDATE_NOT_RELEASE`. `mobile-proxy-mish` remains the sole PRODUCT source of truth; LAB owns only the derived build/test evidence.
+The LAB GitHub Release is marked **pre-release** and is only a physical test candidate. It is not a PRODUCT release and does not move PRODUCT source ownership out of `mobile-proxy-mish`.
 
-The local machine does **not** need Gradle, Rust, cargo-ndk or Android build tooling for this path. `product_physical_control.py` resolves the latest uncompleted request in #11, waits fail-closed for its READY artifact, then reuses `product_physical_e3.py` for exact candidate verification and physical execution.
+The workflow may additionally upload the same files as a 30-day GitHub Actions artifact for temporary CI evidence. That artifact is not the canonical binary store and may expire; the LAB prerelease is what local execution consumes.
+
+The local machine does **not** need Gradle, Rust, cargo-ndk or Android build tooling for this path. `product_physical_control.py` resolves the latest uncompleted request in #11, waits fail-closed for its READY marker, downloads the matching LAB prerelease assets, independently verifies them, then reuses `product_physical_e3.py` for physical execution.
 
 The physical executor:
 
 ```text
-download exact request/source artifact
+download exact request/source LAB prerelease
 -> independently verify candidate.json + both APK SHA-256 values
 -> require exactly one SM-A022G / API 30 / armeabi-v7a device
 -> install PRODUCT + matching androidTest APK
@@ -80,7 +97,7 @@ No automatic uninstall is allowed on signing conflicts. `INSTALL_FAILED_UPDATE_I
 
 Hosted build failures are terminally recorded as `PRODUCT_PHYSICAL_CANDIDATE=FAILED`, so local `go` never waits forever for a failed build. A posted `PRODUCT_PHYSICAL_RESULT` makes that activation terminal; the same request is not accidentally rerun.
 
-Durable GitHub results contain typed E3 evidence and immutable artifact identities, not carrier public IPs, DNS addresses, ADB serials or raw instrumentation logs.
+Durable GitHub results contain typed E3 evidence and immutable prerelease identities, not carrier public IPs, DNS addresses, ADB serials or raw instrumentation logs.
 
 ## General ready-probe tasks
 
@@ -165,6 +182,9 @@ mobile-proxy-mish/main
 LAB Issue #11 comments
     exact PRODUCT physical build/test activation log
 
+LAB prerelease physical-e3-req-<comment-id>
+    canonical long-lived candidate binaries + candidate manifest
+
 com.mobileproxymish.app + com.mobileproxymish.app.test
     exact-source candidate pair derived by hosted LAB CI
 
@@ -182,7 +202,7 @@ C:\mish-lab\
   cache\       exact physical candidates and ready probes
   work\        general task workspaces
   results\     typed results and local-only raw physical instrumentation
-  locks\       DEVICE-1 lock for legacy/general task execution
+  locks\       DEVICE-1 lock for physical/general task execution
 ```
 
 Raw phone logs and temporary experiments stay local unless a useful capability is deliberately promoted into reusable LAB infrastructure.

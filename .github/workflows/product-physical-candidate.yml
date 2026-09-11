@@ -7,7 +7,7 @@ on:
     types: [created]
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -22,6 +22,7 @@ jobs:
       task_id: ${{ steps.request.outputs.task_id }}
       source_sha: ${{ steps.request.outputs.source_sha }}
       artifact_name: ${{ steps.request.outputs.artifact_name }}
+      release_tag: ${{ steps.request.outputs.release_tag }}
     steps:
       - name: Parse exact PRODUCT SHA activation comment
         id: request
@@ -45,12 +46,14 @@ jobs:
           source_sha = body
           task_id = f"REQ-{request_comment_id}"
           artifact_name = f"mish-product-e3-{task_id}-{source_sha}"
+          release_tag = f"physical-e3-req-{request_comment_id}"
           output = Path(os.environ["GITHUB_OUTPUT"])
           with output.open("a", encoding="utf-8") as handle:
               handle.write(f"request_comment_id={request_comment_id}\n")
               handle.write(f"task_id={task_id}\n")
               handle.write(f"source_sha={source_sha}\n")
               handle.write(f"artifact_name={artifact_name}\n")
+              handle.write(f"release_tag={release_tag}\n")
           PY
 
       - name: Checkout exact PRODUCT source
@@ -167,6 +170,7 @@ jobs:
           SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
           TASK_ID: ${{ steps.request.outputs.task_id }}
           REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+          RELEASE_TAG: ${{ steps.request.outputs.release_tag }}
           CONTROL_ISSUE_NUMBER: '11'
         run: |
           set -euo pipefail
@@ -235,6 +239,8 @@ jobs:
               "source_sha": os.environ["SOURCE_SHA"],
               "lab_sha": os.environ["GITHUB_SHA"],
               "build_run_id": int(os.environ["GITHUB_RUN_ID"]),
+              "release_tag": os.environ["RELEASE_TAG"],
+              "distribution": "LAB_GITHUB_PRERELEASE",
               "product_package": "com.mobileproxymish.app",
               "test_package": "com.mobileproxymish.app.test",
               "runner": "androidx.test.runner.AndroidJUnitRunner",
@@ -249,12 +255,92 @@ jobs:
               "signing_certificate_sha256": product_cert,
           }
           Path("dist/candidate.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
-              output.write(f"product_sha256={manifest['product_apk_sha256']}\n")
-              output.write(f"test_sha256={manifest['test_apk_sha256']}\n")
           PY
 
-      - name: Upload immutable physical candidate artifact
+      - name: Publish immutable LAB GitHub prerelease
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+          RELEASE_TAG: ${{ steps.request.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Physical test candidate derived from \`iamaman11/mobile-proxy-mish@$SOURCE_SHA\`.
+
+          - Request comment: \`$REQUEST_COMMENT_ID\`
+          - Source SHA: \`$SOURCE_SHA\`
+          - LAB build run: \`$GITHUB_RUN_ID\`
+          - Scope: physical DEVICE-1 test candidate only; this is a LAB prerelease, not a PRODUCT release.
+
+          Assets are immutable for this request identity. PRODUCT source remains owned only by \`mobile-proxy-mish\`.
+          EOF
+
+          CANONICAL_DIR="dist"
+          if gh release view "$RELEASE_TAG" --repo iamaman11/mobile-proxy-mish-lab >/dev/null 2>&1; then
+            CANONICAL_DIR="$RUNNER_TEMP/existing-release"
+            rm -rf "$CANONICAL_DIR"
+            mkdir -p "$CANONICAL_DIR"
+            gh release download "$RELEASE_TAG" \
+              --repo iamaman11/mobile-proxy-mish-lab \
+              --dir "$CANONICAL_DIR"
+          else
+            gh release create "$RELEASE_TAG" \
+              dist/app-debug.apk \
+              dist/app-debug-androidTest.apk \
+              dist/candidate.json \
+              --repo iamaman11/mobile-proxy-mish-lab \
+              --target "$GITHUB_SHA" \
+              --title "PRODUCT physical candidate REQ-$REQUEST_COMMENT_ID (${SOURCE_SHA:0:12})" \
+              --notes-file "$RUNNER_TEMP/release-notes.md" \
+              --prerelease
+          fi
+
+          CANONICAL_DIR="$CANONICAL_DIR" python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          directory = Path(os.environ["CANONICAL_DIR"])
+          manifest_path = directory / "candidate.json"
+          product = directory / "app-debug.apk"
+          test = directory / "app-debug-androidTest.apk"
+          for path in (manifest_path, product, test):
+              if not path.is_file():
+                  raise SystemExit(f"LAB prerelease is missing required asset: {path.name}")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected = {
+              "request_comment_id": int(os.environ["REQUEST_COMMENT_ID"]),
+              "source_sha": os.environ["SOURCE_SHA"],
+              "release_tag": os.environ["RELEASE_TAG"],
+              "distribution": "LAB_GITHUB_PRERELEASE",
+          }
+          for key, value in expected.items():
+              if manifest.get(key) != value:
+                  raise SystemExit(f"LAB prerelease manifest mismatch for {key}")
+          product_sha = hashlib.sha256(product.read_bytes()).hexdigest()
+          test_sha = hashlib.sha256(test.read_bytes()).hexdigest()
+          if product_sha != manifest.get("product_apk_sha256"):
+              raise SystemExit("LAB prerelease PRODUCT APK digest mismatch")
+          if test_sha != manifest.get("test_apk_sha256"):
+              raise SystemExit("LAB prerelease androidTest APK digest mismatch")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"product_sha256={product_sha}\n")
+              output.write(f"test_sha256={test_sha}\n")
+          PY
+
+          if [[ "$CANONICAL_DIR" != "dist" ]]; then
+            rm -rf dist
+            mkdir -p dist
+            cp "$CANONICAL_DIR/app-debug.apk" dist/app-debug.apk
+            cp "$CANONICAL_DIR/app-debug-androidTest.apk" dist/app-debug-androidTest.apk
+            cp "$CANONICAL_DIR/candidate.json" dist/candidate.json
+          fi
+
+      - name: Upload temporary Actions build evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.request.outputs.artifact_name }}
@@ -267,9 +353,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
           REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
-          ARTIFACT_NAME: ${{ steps.request.outputs.artifact_name }}
-          PRODUCT_SHA: ${{ steps.package.outputs.product_sha256 }}
-          TEST_SHA: ${{ steps.package.outputs.test_sha256 }}
+          RELEASE_TAG: ${{ steps.request.outputs.release_tag }}
+          PRODUCT_SHA: ${{ steps.release.outputs.product_sha256 }}
+          TEST_SHA: ${{ steps.release.outputs.test_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -278,12 +364,12 @@ jobs:
 
           \`REQUEST_COMMENT_ID=$REQUEST_COMMENT_ID\`
           \`SOURCE_SHA=$SOURCE_SHA\`
-          \`ARTIFACT=$ARTIFACT_NAME\`
+          \`RELEASE_TAG=$RELEASE_TAG\`
           \`PRODUCT_APK_SHA256=$PRODUCT_SHA\`
           \`TEST_APK_SHA256=$TEST_SHA\`
           \`BUILD_RUN_ID=$GITHUB_RUN_ID\`
 
-          Scope: physical test candidate only; not a Release and not product source of truth.
+          Canonical binaries: LAB GitHub prerelease \`$RELEASE_TAG\`. Actions artifact is temporary build evidence only.
           EOF
           gh issue comment 11 --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-comment.md"
 
