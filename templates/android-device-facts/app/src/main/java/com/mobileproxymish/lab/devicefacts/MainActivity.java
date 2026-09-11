@@ -39,7 +39,7 @@ public final class MainActivity extends Activity {
 
     private void writeResult() {
         String mode = getIntent().getStringExtra("mish_lab_mode");
-        if (mode == null || mode.isBlank()) {
+        if (mode == null || mode.trim().isEmpty()) {
             mode = MODE_NETWORK_BIND_MATRIX;
         }
 
