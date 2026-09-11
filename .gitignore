@@ -1,0 +1,7 @@
+.mish-lab/
+.gradle/
+**/build/
+local.properties
+*.apk
+*.keystore
+*.jks
