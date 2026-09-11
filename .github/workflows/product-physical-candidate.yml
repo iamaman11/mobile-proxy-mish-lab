@@ -1,10 +1,10 @@
 name: Product Physical Candidate
 
-run-name: PRODUCT physical candidate from LAB task #${{ github.event.issue.number }}
+run-name: PRODUCT physical candidate request ${{ github.event.comment.id }}
 
 on:
-  issues:
-    types: [opened, reopened]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -13,54 +13,41 @@ permissions:
 jobs:
   build:
     if: >-
-      startsWith(github.event.issue.title, '[LAB TASK') &&
-      contains(github.event.issue.body, 'product_physical_e3')
+      github.event.issue.number == 11 &&
+      github.event.comment.user.login == 'iamaman11' &&
+      !startsWith(github.event.comment.body, 'PRODUCT_')
     runs-on: ubuntu-latest
     outputs:
-      task_id: ${{ steps.task.outputs.task_id }}
-      source_sha: ${{ steps.task.outputs.source_sha }}
-      artifact_name: ${{ steps.task.outputs.artifact_name }}
+      request_comment_id: ${{ steps.request.outputs.request_comment_id }}
+      task_id: ${{ steps.request.outputs.task_id }}
+      source_sha: ${{ steps.request.outputs.source_sha }}
+      artifact_name: ${{ steps.request.outputs.artifact_name }}
     steps:
-      - name: Parse bounded PRODUCT physical task
-        id: task
+      - name: Parse exact PRODUCT SHA activation comment
+        id: request
         shell: bash
         env:
-          ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REQUEST_COMMENT_ID: ${{ github.event.comment.id }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json
           import os
           import re
           from pathlib import Path
 
-          body = os.environ.get("ISSUE_BODY", "")
-          blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", body, flags=re.DOTALL | re.IGNORECASE)
-          task = None
-          for block in blocks:
-              try:
-                  candidate = json.loads(block)
-              except json.JSONDecodeError:
-                  continue
-              if isinstance(candidate, dict) and candidate.get("schema") == "mish.lab-task/v1":
-                  task = candidate
-                  break
-          if task is None:
-              raise SystemExit("LAB task JSON block not found")
-          if task.get("operation") != "research.manual" or task.get("execution") != "product_physical_e3":
-              raise SystemExit("issue is not a product_physical_e3 task")
-          task_id = task.get("task_id")
-          if not isinstance(task_id, str) or re.fullmatch(r"LAB-[0-9]{4}", task_id) is None:
-              raise SystemExit("invalid task_id")
-          product = task.get("product")
-          if not isinstance(product, dict) or product.get("repo") != "iamaman11/mobile-proxy-mish":
-              raise SystemExit("PRODUCT repo must be iamaman11/mobile-proxy-mish")
-          source_sha = product.get("source_sha")
-          if not isinstance(source_sha, str) or re.fullmatch(r"[0-9a-f]{40}", source_sha) is None:
-              raise SystemExit("product.source_sha must be an exact lowercase commit SHA")
+          body = os.environ.get("COMMENT_BODY", "")
+          if re.fullmatch(r"[0-9a-f]{40}", body) is None:
+              raise SystemExit("control comment must contain exactly one lowercase 40-character PRODUCT SHA")
+          request_comment_id = os.environ["REQUEST_COMMENT_ID"]
+          if re.fullmatch(r"[0-9]+", request_comment_id) is None:
+              raise SystemExit("invalid GitHub request comment id")
+          source_sha = body
+          task_id = f"REQ-{request_comment_id}"
           artifact_name = f"mish-product-e3-{task_id}-{source_sha}"
           output = Path(os.environ["GITHUB_OUTPUT"])
           with output.open("a", encoding="utf-8") as handle:
+              handle.write(f"request_comment_id={request_comment_id}\n")
               handle.write(f"task_id={task_id}\n")
               handle.write(f"source_sha={source_sha}\n")
               handle.write(f"artifact_name={artifact_name}\n")
@@ -70,7 +57,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: iamaman11/mobile-proxy-mish
-          ref: ${{ steps.task.outputs.source_sha }}
+          ref: ${{ steps.request.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
           path: product
@@ -78,7 +65,7 @@ jobs:
       - name: Verify source belongs to main and exact main CI passed
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.task.outputs.source_sha }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
         run: |
           set -euo pipefail
           ACTUAL="$(git -C product rev-parse HEAD)"
@@ -177,9 +164,10 @@ jobs:
         id: package
         shell: bash
         env:
-          SOURCE_SHA: ${{ steps.task.outputs.source_sha }}
-          TASK_ID: ${{ steps.task.outputs.task_id }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          TASK_ID: ${{ steps.request.outputs.task_id }}
+          REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+          CONTROL_ISSUE_NUMBER: '11'
         run: |
           set -euo pipefail
           PRODUCT="product/android/app/build/outputs/apk/debug/app-debug.apk"
@@ -241,7 +229,8 @@ jobs:
           manifest = {
               "schema": "mish.product-physical-candidate/v1",
               "task_id": os.environ["TASK_ID"],
-              "issue_number": int(os.environ["ISSUE_NUMBER"]),
+              "issue_number": int(os.environ["CONTROL_ISSUE_NUMBER"]),
+              "request_comment_id": int(os.environ["REQUEST_COMMENT_ID"]),
               "source_repo": "iamaman11/mobile-proxy-mish",
               "source_sha": os.environ["SOURCE_SHA"],
               "lab_sha": os.environ["GITHUB_SHA"],
@@ -263,24 +252,22 @@ jobs:
           with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
               output.write(f"product_sha256={manifest['product_apk_sha256']}\n")
               output.write(f"test_sha256={manifest['test_apk_sha256']}\n")
-              output.write(f"certificate_sha256={product_cert}\n")
           PY
 
       - name: Upload immutable physical candidate artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ${{ steps.task.outputs.artifact_name }}
+          name: ${{ steps.request.outputs.artifact_name }}
           path: dist/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Record candidate on LAB task
+      - name: Record candidate READY on control issue
         env:
           GH_TOKEN: ${{ github.token }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          SOURCE_SHA: ${{ steps.task.outputs.source_sha }}
-          TASK_ID: ${{ steps.task.outputs.task_id }}
-          ARTIFACT_NAME: ${{ steps.task.outputs.artifact_name }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+          ARTIFACT_NAME: ${{ steps.request.outputs.artifact_name }}
           PRODUCT_SHA: ${{ steps.package.outputs.product_sha256 }}
           TEST_SHA: ${{ steps.package.outputs.test_sha256 }}
         shell: bash
@@ -289,7 +276,7 @@ jobs:
           cat > "$RUNNER_TEMP/candidate-comment.md" <<EOF
           PRODUCT_PHYSICAL_CANDIDATE=READY
 
-          \`TASK_ID=$TASK_ID\`
+          \`REQUEST_COMMENT_ID=$REQUEST_COMMENT_ID\`
           \`SOURCE_SHA=$SOURCE_SHA\`
           \`ARTIFACT=$ARTIFACT_NAME\`
           \`PRODUCT_APK_SHA256=$PRODUCT_SHA\`
@@ -298,4 +285,24 @@ jobs:
 
           Scope: physical test candidate only; not a Release and not product source of truth.
           EOF
-          gh issue comment "$ISSUE_NUMBER" --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-comment.md"
+          gh issue comment 11 --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-comment.md"
+
+      - name: Record terminal hosted build failure
+        if: ${{ failure() && steps.request.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ steps.request.outputs.source_sha }}
+          REQUEST_COMMENT_ID: ${{ steps.request.outputs.request_comment_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/candidate-failed.md" <<EOF
+          PRODUCT_PHYSICAL_CANDIDATE=FAILED
+
+          \`REQUEST_COMMENT_ID=$REQUEST_COMMENT_ID\`
+          \`SOURCE_SHA=$SOURCE_SHA\`
+          \`BUILD_RUN_ID=$GITHUB_RUN_ID\`
+
+          Hosted candidate build failed closed. No physical acceptance may be inferred.
+          EOF
+          gh issue comment 11 --repo iamaman11/mobile-proxy-mish-lab --body-file "$RUNNER_TEMP/candidate-failed.md"

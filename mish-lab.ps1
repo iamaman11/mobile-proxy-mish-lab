@@ -36,6 +36,12 @@ function Invoke-MishProductPhysicalE3 {
     return Invoke-MishPythonEntry -Entry $entry -Arguments $Arguments
 }
 
+function Invoke-MishProductPhysicalControl {
+    param([string[]]$Arguments)
+    $entry = Join-Path $repoRoot 'product_physical_control.py'
+    return Invoke-MishPythonEntry -Entry $entry -Arguments $Arguments
+}
+
 function Resolve-MishLabAdb {
     if ($env:MISH_LAB_ADB -and (Test-Path -LiteralPath $env:MISH_LAB_ADB -PathType Leaf)) {
         return $env:MISH_LAB_ADB
@@ -100,6 +106,17 @@ if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
     $code = Invoke-MishLabPython @('doctor')
     if ($code -ne 0) { exit $code }
 
+    # PRODUCT physical acceptance has one permanent natural owner: control Issue #11.
+    # Exit 3 means there is no pending PRODUCT request, so legacy/general LAB tasks may proceed.
+    # Exit 4 means the latest PRODUCT request exists but its hosted candidate is still building.
+    $controlCode = Invoke-MishProductPhysicalControl @('execute')
+    if ($controlCode -eq 0 -or $controlCode -eq 2 -or $controlCode -eq 4) {
+        exit $controlCode
+    }
+    if ($controlCode -ne 3) {
+        exit $controlCode
+    }
+
     $code = Invoke-MishLabPython @('next')
     if ($code -ne 0) { exit $code }
 
@@ -123,6 +140,7 @@ if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
         exit $code
     }
 
+    # Retained only for already-issued legacy PRODUCT tasks. New PRODUCT E3 activation uses Issue #11.
     if ($current.execution -eq 'product_physical_e3') {
         $code = Invoke-MishProductPhysicalE3 @('execute')
         if ($code -ne 0) { exit $code }

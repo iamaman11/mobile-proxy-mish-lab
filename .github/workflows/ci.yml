@@ -25,6 +25,7 @@ jobs:
         run: |
           python mish_lab.py selftest
           python product_physical_e3.py selftest
+          python product_physical_control.py selftest
 
       - name: Validate PowerShell launcher
         shell: pwsh
