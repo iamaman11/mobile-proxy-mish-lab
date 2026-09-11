@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sys
+from pathlib import Path
 from typing import Any
 
 import mish_lab as lab
@@ -72,6 +74,51 @@ def request_state(comments: list[dict[str, Any]]) -> tuple[int, str, str]:
     return request_id, source_sha, "READY" if ready else "BUILDING"
 
 
+def release_tag(request_id: int) -> str:
+    return f"physical-e3-req-{request_id}"
+
+
+def download_release_candidate(
+    root: Path,
+    request_id: int,
+    source_sha: str,
+) -> tuple[Path, Path, dict[str, Any]]:
+    task_id = f"REQ-{request_id}"
+    tag = release_tag(request_id)
+    destination = root / "cache" / "product-e3-release" / source_sha / task_id
+    if destination.is_dir():
+        try:
+            product_apk, test_apk, manifest = e3.verify_candidate(destination, task_id, source_sha)
+            if manifest.get("request_comment_id") != request_id:
+                raise RuntimeError("candidate request_comment_id mismatch")
+            if manifest.get("issue_number") != CONTROL_ISSUE:
+                raise RuntimeError("candidate control issue identity mismatch")
+            if manifest.get("release_tag") != tag:
+                raise RuntimeError("candidate release_tag mismatch")
+            if manifest.get("distribution") != "LAB_GITHUB_PRERELEASE":
+                raise RuntimeError("candidate distribution mismatch")
+            return product_apk, test_apk, manifest
+        except Exception:
+            shutil.rmtree(destination)
+
+    destination.mkdir(parents=True, exist_ok=True)
+    e3.run([
+        e3.find_gh(), "release", "download", tag,
+        "--repo", e3.LAB_REPO,
+        "--dir", str(destination),
+    ], capture=False)
+    product_apk, test_apk, manifest = e3.verify_candidate(destination, task_id, source_sha)
+    if manifest.get("request_comment_id") != request_id:
+        raise RuntimeError("candidate request_comment_id mismatch")
+    if manifest.get("issue_number") != CONTROL_ISSUE:
+        raise RuntimeError("candidate control issue identity mismatch")
+    if manifest.get("release_tag") != tag:
+        raise RuntimeError("candidate release_tag mismatch")
+    if manifest.get("distribution") != "LAB_GITHUB_PRERELEASE":
+        raise RuntimeError("candidate distribution mismatch")
+    return product_apk, test_apk, manifest
+
+
 def post_result(result: dict[str, Any]) -> None:
     body = (
         "PRODUCT_PHYSICAL_RESULT\n\n"
@@ -107,11 +154,7 @@ def execute() -> int:
     task_id = f"REQ-{request_id}"
     lab.acquire_lock(root, task_id)
     try:
-        product_apk, test_apk, manifest = e3.download_candidate(root, task_id, source_sha)
-        if manifest.get("request_comment_id") != request_id:
-            raise RuntimeError("candidate request_comment_id mismatch")
-        if manifest.get("issue_number") != CONTROL_ISSUE:
-            raise RuntimeError("candidate control issue identity mismatch")
+        product_apk, test_apk, manifest = download_release_candidate(root, request_id, source_sha)
 
         adb = e3.find_adb()
         if not adb:
@@ -128,6 +171,8 @@ def execute() -> int:
             "outcome": summary["outcome"],
             "device": device,
             "candidate": {
+                "release_tag": manifest["release_tag"],
+                "distribution": manifest["distribution"],
                 "lab_sha": manifest["lab_sha"],
                 "build_run_id": manifest["build_run_id"],
                 "product_apk_sha256": manifest["product_apk_sha256"],
@@ -141,6 +186,7 @@ def execute() -> int:
         post_result(result)
         print("MISH_PRODUCT_PHYSICAL_CONTROL=COMPLETE")
         print(f"REQUEST_COMMENT_ID={request_id}")
+        print(f"RELEASE_TAG={manifest['release_tag']}")
         print(f"E3_OUTCOME={summary['outcome']}")
         return 0 if summary["outcome"] == "PASS" else 2
     finally:
@@ -160,6 +206,8 @@ def selftest() -> int:
         raise AssertionError("latest request selection failed")
     if request_state(comments) != (12, sha2, "READY"):
         raise AssertionError("READY state resolution failed")
+    if release_tag(12) != "physical-e3-req-12":
+        raise AssertionError("release tag derivation failed")
 
     failed = comments[:-1] + [
         {"id": 13, "user": {"login": "github-actions[bot]"}, "body": "PRODUCT_PHYSICAL_CANDIDATE=FAILED\n`REQUEST_COMMENT_ID=12`\n`SOURCE_SHA=" + sha2 + "`"}
