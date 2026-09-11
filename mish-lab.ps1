@@ -17,11 +17,12 @@ function Invoke-MishLabPython {
     param([string[]]$Arguments)
     $entry = Join-Path $repoRoot 'mish_lab.py'
     if ($python.Name -eq 'py.exe' -or $python.Name -eq 'py') {
-        & $python.Source -3 $entry @Arguments
+        & $python.Source -3 $entry @Arguments | Out-Host
     } else {
-        & $python.Source $entry @Arguments
+        & $python.Source $entry @Arguments | Out-Host
     }
-    return $LASTEXITCODE
+    $code = $LASTEXITCODE
+    return $code
 }
 
 if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
@@ -45,7 +46,7 @@ if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
         exit $code
     }
 
-    Invoke-MishLabPython @('status') | Out-Host
+    $null = Invoke-MishLabPython @('status')
     Write-Host 'MISH_LAB_GO=WORKSPACE_READY'
     Write-Host "EXECUTION=$($current.execution)"
     Write-Host "WORKSPACE=$($current.workspace)"
