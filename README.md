@@ -52,6 +52,17 @@ GitHub task
 -> typed result
 ```
 
+The prebuilt observer currently returns the normal device/network facts plus a non-mutating cellular socket-bind matrix on the same validated direct cellular `Network` when one is available:
+
+```text
+Framework Network.bindSocket(FileDescriptor)
+NDK android_setsocknetwork() + immediate errno
+x IPv4 / IPv6
+x fresh direct FD / dup-detach-adopt FD
+```
+
+It does not toggle radios, change network configuration, connect the test sockets, or modify the product. Network handles, IP addresses and raw logcat stay transient; the durable result contains only typed observations, PASS/FAIL, errno and a classification.
+
 The local agent normally just runs `mish-lab.ps1 go`.
 
 ### 2. Product Sandbox — when product code must be explored
