@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import re
 import sys
-from pathlib import Path
 from typing import Any
 
 import product_physical_e3 as e3
@@ -60,8 +59,11 @@ def request_state(comments: list[dict[str, Any]]) -> tuple[int, str, str]:
         raise LookupError("NO_REQUEST")
     request_id, source_sha = request
     for item in comments:
-        if marker_matches(str(item.get("body") or ""), "PRODUCT_PHYSICAL_RESULT", request_id, source_sha):
+        body = str(item.get("body") or "")
+        if marker_matches(body, "PRODUCT_PHYSICAL_RESULT", request_id, source_sha):
             raise LookupError("ALREADY_COMPLETE")
+        if marker_matches(body, "PRODUCT_PHYSICAL_CANDIDATE=FAILED", request_id, source_sha):
+            return request_id, source_sha, "BUILD_FAILED"
     ready = any(
         marker_matches(str(item.get("body") or ""), "PRODUCT_PHYSICAL_CANDIDATE=READY", request_id, source_sha)
         for item in comments
@@ -70,7 +72,13 @@ def request_state(comments: list[dict[str, Any]]) -> tuple[int, str, str]:
 
 
 def post_result(result: dict[str, Any]) -> None:
-    body = "PRODUCT_PHYSICAL_RESULT\n\n```json\n" + json.dumps(result, indent=2) + "\n```\n"
+    body = (
+        "PRODUCT_PHYSICAL_RESULT\n\n"
+        f"`REQUEST_COMMENT_ID={result['request_comment_id']}`\n"
+        f"`SOURCE_SHA={result['source_sha']}`\n"
+        f"`E3_OUTCOME={result['outcome']}`\n\n"
+        "```json\n" + json.dumps(result, indent=2) + "\n```\n"
+    )
     e3.run([
         e3.find_gh(), "issue", "comment", str(CONTROL_ISSUE),
         "--repo", e3.LAB_REPO, "--body", body,
@@ -87,6 +95,9 @@ def execute() -> int:
 
     print(f"MISH_PRODUCT_CONTROL_REQUEST={request_id}")
     print(f"SOURCE_SHA={source_sha}")
+    if state == "BUILD_FAILED":
+        print("MISH_PRODUCT_CONTROL=BUILD_FAILED")
+        return 1
     if state != "READY":
         print("MISH_PRODUCT_CONTROL=BUILD_PENDING")
         return BUILD_PENDING
@@ -146,6 +157,13 @@ def selftest() -> int:
         raise AssertionError("latest request selection failed")
     if request_state(comments) != (12, sha2, "READY"):
         raise AssertionError("READY state resolution failed")
+
+    failed = comments[:-1] + [
+        {"id": 13, "user": {"login": "github-actions[bot]"}, "body": "PRODUCT_PHYSICAL_CANDIDATE=FAILED\n`REQUEST_COMMENT_ID=12`\n`SOURCE_SHA=" + sha2 + "`"}
+    ]
+    if request_state(failed) != (12, sha2, "BUILD_FAILED"):
+        raise AssertionError("build failure state resolution failed")
+
     comments.append({"id": 14, "user": {"login": OWNER}, "body": "PRODUCT_PHYSICAL_RESULT\n`REQUEST_COMMENT_ID=12`\n`SOURCE_SHA=" + sha2 + "`"})
     try:
         request_state(comments)
