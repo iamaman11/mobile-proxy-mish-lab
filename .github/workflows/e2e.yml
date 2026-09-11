@@ -16,11 +16,12 @@ permissions:
 
 env:
   GH_TOKEN: ${{ github.token }}
-  MISH_LAB_ROOT: ${{ runner.temp }}/mish-lab
 
 jobs:
   emulator-e2e:
     runs-on: ubuntu-latest
+    env:
+      MISH_LAB_ROOT: ${{ runner.temp }}/mish-lab
     steps:
       - name: Checkout LAB
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
