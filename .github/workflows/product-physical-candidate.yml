@@ -14,7 +14,8 @@ jobs:
   build:
     if: >-
       github.event.issue.number == 11 &&
-      github.event.comment.user.login == 'iamaman11'
+      github.event.comment.user.login == 'iamaman11' &&
+      !startsWith(github.event.comment.body, 'PRODUCT_')
     runs-on: ubuntu-latest
     outputs:
       request_comment_id: ${{ steps.request.outputs.request_comment_id }}
