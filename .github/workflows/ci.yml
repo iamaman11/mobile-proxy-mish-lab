@@ -42,12 +42,34 @@ jobs:
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK root is not configured}}"
           "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Build research Android probe
+      - name: Build ready Android probe
         run: gradle --no-daemon -p templates/android-device-facts :app:assembleDebug
 
-      - name: Verify probe APK
+      - name: Package ready probe
         shell: bash
         run: |
           set -euo pipefail
-          test -f templates/android-device-facts/app/build/outputs/apk/debug/app-debug.apk
-          sha256sum templates/android-device-facts/app/build/outputs/apk/debug/app-debug.apk
+          mkdir -p dist
+          cp templates/android-device-facts/app/build/outputs/apk/debug/app-debug.apk dist/mish-lab-device-facts.apk
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          apk = Path('dist/mish-lab-device-facts.apk')
+          manifest = {
+              'schema': 'mish.lab-probe/v1',
+              'lab_sha': os.environ['GITHUB_SHA'],
+              'package': 'com.mobileproxymish.lab.devicefacts',
+              'activity': 'com.mobileproxymish.lab.devicefacts/.MainActivity',
+              'sha256': hashlib.sha256(apk.read_bytes()).hexdigest(),
+          }
+          Path('dist/probe.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          print('READY_PROBE_SHA256=' + manifest['sha256'])
+          PY
+
+      - name: Upload ready probe
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mish-lab-ready-probe
+          path: dist/
+          retention-days: 30
