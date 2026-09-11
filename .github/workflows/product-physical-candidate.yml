@@ -149,18 +149,15 @@ jobs:
           echo "MISH_TARGET_ABI=$TARGET_ABI" >> "$GITHUB_ENV"
           echo "MISH_RUST_TARGET=$RUST_TARGET" >> "$GITHUB_ENV"
 
-      - name: Verify hosted Android SDK and install pinned NDK
+      - name: Install pinned Android NDK exactly like PRODUCT CI
         shell: bash
         run: |
           set -euo pipefail
           SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Android SDK root is not configured}}"
           SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$SDKMANAGER"
-          test -d "$SDK_ROOT/platforms/android-37"
-          test -x "$SDK_ROOT/build-tools/36.0.0/aapt"
-          test -x "$SDK_ROOT/build-tools/36.0.0/apksigner"
-          "$SDKMANAGER" "ndk;29.0.14206865"
           NDK_PATH="$SDK_ROOT/ndk/29.0.14206865"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" "ndk;29.0.14206865"
           test -d "$NDK_PATH"
           echo "ANDROID_NDK_HOME=$NDK_PATH" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$NDK_PATH" >> "$GITHUB_ENV"
