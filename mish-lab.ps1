@@ -13,10 +13,43 @@ if (-not $python) {
     throw 'Python 3 is required. Install Python or place it on PATH.'
 }
 
-$entry = Join-Path $repoRoot 'mish_lab.py'
-if ($python.Name -eq 'py.exe' -or $python.Name -eq 'py') {
-    & $python.Source -3 $entry @ArgsRest
-} else {
-    & $python.Source $entry @ArgsRest
+function Invoke-MishLabPython {
+    param([string[]]$Arguments)
+    $entry = Join-Path $repoRoot 'mish_lab.py'
+    if ($python.Name -eq 'py.exe' -or $python.Name -eq 'py') {
+        & $python.Source -3 $entry @Arguments
+    } else {
+        & $python.Source $entry @Arguments
+    }
+    return $LASTEXITCODE
 }
-exit $LASTEXITCODE
+
+if ($ArgsRest.Count -gt 0 -and $ArgsRest[0] -eq 'go') {
+    & git -C $repoRoot pull --ff-only origin main
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    $code = Invoke-MishLabPython @('doctor')
+    if ($code -ne 0) { exit $code }
+
+    $code = Invoke-MishLabPython @('next')
+    if ($code -ne 0) { exit $code }
+
+    $labRoot = if ($env:MISH_LAB_ROOT) { $env:MISH_LAB_ROOT } else { 'C:\mish-lab' }
+    $currentPath = Join-Path $labRoot 'current.json'
+    $current = Get-Content -LiteralPath $currentPath -Raw | ConvertFrom-Json
+
+    if ($current.execution -eq 'ready_probe') {
+        $code = Invoke-MishLabPython @('run')
+        if ($code -ne 0) { exit $code }
+        $code = Invoke-MishLabPython @('submit')
+        exit $code
+    }
+
+    Invoke-MishLabPython @('status') | Out-Host
+    Write-Host 'MISH_LAB_GO=WORKSPACE_READY'
+    Write-Host "EXECUTION=$($current.execution)"
+    Write-Host "WORKSPACE=$($current.workspace)"
+    exit 0
+}
+
+exit (Invoke-MishLabPython $ArgsRest)
