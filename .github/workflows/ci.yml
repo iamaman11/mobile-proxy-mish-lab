@@ -22,7 +22,9 @@ jobs:
           python-version: '3.13'
 
       - name: Self-test CLI
-        run: python mish_lab.py selftest
+        run: |
+          python mish_lab.py selftest
+          python product_physical_e3.py selftest
 
       - name: Validate PowerShell launcher
         shell: pwsh
