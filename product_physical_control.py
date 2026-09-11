@@ -6,6 +6,7 @@ import re
 import sys
 from typing import Any
 
+import mish_lab as lab
 import product_physical_e3 as e3
 
 CONTROL_ISSUE = 11
@@ -102,46 +103,48 @@ def execute() -> int:
         print("MISH_PRODUCT_CONTROL=BUILD_PENDING")
         return BUILD_PENDING
 
-    root = e3.lab_root()
-    for child in ("cache", "results"):
-        (root / child).mkdir(parents=True, exist_ok=True)
+    root = lab.ensure_layout()
     task_id = f"REQ-{request_id}"
-    product_apk, test_apk, manifest = e3.download_candidate(root, task_id, source_sha)
-    if manifest.get("request_comment_id") != request_id:
-        raise RuntimeError("candidate request_comment_id mismatch")
-    if manifest.get("issue_number") != CONTROL_ISSUE:
-        raise RuntimeError("candidate control issue identity mismatch")
+    lab.acquire_lock(root, task_id)
+    try:
+        product_apk, test_apk, manifest = e3.download_candidate(root, task_id, source_sha)
+        if manifest.get("request_comment_id") != request_id:
+            raise RuntimeError("candidate request_comment_id mismatch")
+        if manifest.get("issue_number") != CONTROL_ISSUE:
+            raise RuntimeError("candidate control issue identity mismatch")
 
-    adb = e3.find_adb()
-    if not adb:
-        raise RuntimeError("ADB is unavailable; run mish-lab doctor")
-    device = e3.verify_device(adb)
-    summary, raw = e3.run_physical_e3(adb, product_apk, test_apk, 20)
-    raw_path = root / "results" / f"product-physical-{request_id}-instrumentation.txt"
-    raw_path.write_text(raw, encoding="utf-8")
+        adb = e3.find_adb()
+        if not adb:
+            raise RuntimeError("ADB is unavailable; run mish-lab doctor")
+        device = e3.verify_device(adb)
+        summary, raw = e3.run_physical_e3(adb, product_apk, test_apk, 20)
+        raw_path = root / "results" / f"product-physical-{request_id}-instrumentation.txt"
+        raw_path.write_text(raw, encoding="utf-8")
 
-    result = {
-        "schema": RESULT_SCHEMA,
-        "request_comment_id": request_id,
-        "source_sha": source_sha,
-        "outcome": summary["outcome"],
-        "device": device,
-        "candidate": {
-            "lab_sha": manifest["lab_sha"],
-            "build_run_id": manifest["build_run_id"],
-            "product_apk_sha256": manifest["product_apk_sha256"],
-            "test_apk_sha256": manifest["test_apk_sha256"],
-            "signing_certificate_sha256": manifest["signing_certificate_sha256"],
-            "scope": manifest["scope"],
-        },
-        "e3": summary,
-        "raw_instrumentation": "LOCAL_ONLY",
-    }
-    post_result(result)
-    print("MISH_PRODUCT_PHYSICAL_CONTROL=COMPLETE")
-    print(f"REQUEST_COMMENT_ID={request_id}")
-    print(f"E3_OUTCOME={summary['outcome']}")
-    return 0 if summary["outcome"] == "PASS" else 2
+        result = {
+            "schema": RESULT_SCHEMA,
+            "request_comment_id": request_id,
+            "source_sha": source_sha,
+            "outcome": summary["outcome"],
+            "device": device,
+            "candidate": {
+                "lab_sha": manifest["lab_sha"],
+                "build_run_id": manifest["build_run_id"],
+                "product_apk_sha256": manifest["product_apk_sha256"],
+                "test_apk_sha256": manifest["test_apk_sha256"],
+                "signing_certificate_sha256": manifest["signing_certificate_sha256"],
+                "scope": manifest["scope"],
+            },
+            "e3": summary,
+            "raw_instrumentation": "LOCAL_ONLY",
+        }
+        post_result(result)
+        print("MISH_PRODUCT_PHYSICAL_CONTROL=COMPLETE")
+        print(f"REQUEST_COMMENT_ID={request_id}")
+        print(f"E3_OUTCOME={summary['outcome']}")
+        return 0 if summary["outcome"] == "PASS" else 2
+    finally:
+        lab.release_lock(root, task_id)
 
 
 def selftest() -> int:
