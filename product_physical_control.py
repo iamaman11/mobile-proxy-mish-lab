@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import mish_lab as lab
+import product_physical_diagnostic as diagnostic
 import product_physical_e3 as e3
 
 CONTROL_ISSUE = 11
@@ -160,9 +161,24 @@ def execute() -> int:
         if not adb:
             raise RuntimeError("ADB is unavailable; run mish-lab doctor")
         device = e3.verify_device(adb)
-        summary, raw = e3.run_physical_e3(adb, product_apk, test_apk, 20)
+
+        diagnostic_summary, diagnostic_raw = diagnostic.run_composition_diagnostic(
+            adb,
+            product_apk,
+            test_apk,
+            20,
+        )
+        # The diagnostic consumes the one operator Magisk-grant window. The package/signature is
+        # unchanged for the E3 rerun, so no second artificial delay is needed.
+        summary, raw = e3.run_physical_e3(adb, product_apk, test_apk, 0)
         raw_path = root / "results" / f"product-physical-{request_id}-instrumentation.txt"
-        raw_path.write_text(raw, encoding="utf-8")
+        raw_path.write_text(
+            "=== PRODUCT COMPOSITION DIAGNOSTIC ===\n"
+            + diagnostic_raw
+            + "\n=== PRODUCT E3 ===\n"
+            + raw,
+            encoding="utf-8",
+        )
 
         result = {
             "schema": RESULT_SCHEMA,
@@ -180,6 +196,7 @@ def execute() -> int:
                 "signing_certificate_sha256": manifest["signing_certificate_sha256"],
                 "scope": manifest["scope"],
             },
+            "diagnostic": diagnostic_summary,
             "e3": summary,
             "raw_instrumentation": "LOCAL_ONLY",
         }
@@ -187,6 +204,7 @@ def execute() -> int:
         print("MISH_PRODUCT_PHYSICAL_CONTROL=COMPLETE")
         print(f"REQUEST_COMMENT_ID={request_id}")
         print(f"RELEASE_TAG={manifest['release_tag']}")
+        print(f"DIAGNOSTIC_STATUS={diagnostic_summary['status']}")
         print(f"E3_OUTCOME={summary['outcome']}")
         return 0 if summary["outcome"] == "PASS" else 2
     finally:
