@@ -1,127 +1,78 @@
 # MISH Lab
 
-Simple local Android research workspace for `iamaman11/mobile-proxy-mish`.
+Local Windows/Android diagnostic workspace for `iamaman11/mobile-proxy-mish`.
 
-The default local operator interface is one command:
+## Ownership
+
+`iamaman11/mobile-proxy-mish` is the sole PRODUCT source/build/release authority.
+
+Formal PRODUCT acceptance does **not** build Android in this repository and does **not** use a LAB prerelease as PRODUCT identity.
+
+The accepted path is:
+
+```text
+mobile-proxy-mish protected main
+ -> PRODUCT CI PASS
+ -> read-only Cloudflare live preflight PASS
+ -> Android Release Candidate workflow
+ -> one immutable PRODUCT RC
+ -> E3 Physical Cellular workflow on Windows LAB + phone
+ -> E4 real-client acceptance on the same RC
+ -> PROXY_ON_PHONE_WORKING=YES
+```
+
+The PRODUCT repository owns:
+
+- source and reviewed workflows;
+- immutable RC tag/release identity;
+- signed PRODUCT APK;
+- release manifest and PRODUCT APK SHA-256;
+- exact E3 instrumentation harness artifact from the same RC build;
+- formal E3/E4 evidence orchestration.
+
+This LAB repository owns only reusable local diagnostics/research helpers and general device probes.
+
+## No second PRODUCT build path
+
+The historical Issue #11 / `product-physical-candidate.yml` flow that rebuilt `app-debug.apk` in this repository is retired.
+
+Do not:
+
+- copy PRODUCT APK files into this repository;
+- rebuild PRODUCT here for E3/E4;
+- create LAB prereleases as formal PRODUCT candidates;
+- use `latest` or an unverified APK as acceptance identity;
+- put Android release signing secrets on the LAB host.
+
+Formal E3 is launched from the protected PRODUCT repository workflow:
+
+```text
+.github/workflows/e3-physical-cellular.yml
+```
+
+That workflow resolves the current immutable RC, verifies exact release tag/source/APK digest/signing certificate, resolves the matching same-source E3 harness artifact, and only then executes the physical Windows/Android stage. The physical host is a consumer of those bytes, never a builder.
+
+## Default local diagnostic command
 
 ```powershell
 .\mish-lab.ps1 go
 ```
 
-For PRODUCT physical acceptance, build activation is deliberately separate from the phone: choose one exact accepted PRODUCT `main` SHA and post that SHA as the entire comment in permanent control Issue **#11**. GitHub-hosted LAB CI builds the candidate; the local agent only consumes and tests it.
+`go` now handles only the general LAB task queue. It no longer polls Issue #11 or activates a PRODUCT build/acceptance flow.
 
-For general LAB tasks, `go` keeps the existing task flow as a fallback.
-
-## PRODUCT physical E3 — standard path
-
-Permanent natural owner:
-
-`#11 [LAB CONTROL] PRODUCT physical candidate — build / test activation`
-
-The complete standard procedure is:
-
-```text
-decide exact green iamaman11/mobile-proxy-mish/main SHA
--> comment exactly that lowercase 40-char SHA in LAB Issue #11
--> GitHub-hosted builder validates source/main/CI identity
--> build app-debug.apk + app-debug-androidTest.apk once
--> verify package/signature/native payload
--> publish candidate.json + both APKs as one LAB GitHub prerelease
--> post READY or FAILED to Issue #11
--> local agent runs .\mish-lab.ps1 go
--> LAB downloads and independently verifies the exact Release assets
--> install/run PRODUCT physical E3 on DEVICE-1
--> post typed RESULT back to Issue #11
-```
-
-No new LAB task Issue is created for each PRODUCT build. The activation comment itself is immutable evidence: its GitHub comment ID is the request identity.
-
-A valid activation comment must:
-
-- be on Issue #11;
-- be authored by `iamaman11`;
-- contain only one lowercase 40-character SHA;
-- point to a commit in `iamaman11/mobile-proxy-mish` `main` history;
-- have a successful exact-SHA `push` run of PRODUCT `.github/workflows/ci.yml`.
-
-Everything else fails closed or is ignored by the activation job.
-
-Each valid request gets one immutable LAB prerelease tag:
-
-```text
-physical-e3-req-<GitHub-comment-id>
-```
-
-That prerelease is the canonical long-lived binary store for the physical candidate and contains exactly:
-
-```text
-app-debug.apk
-app-debug-androidTest.apk
-candidate.json
-```
-
-`candidate.json` binds:
-
-- permanent control Issue number;
-- immutable request comment ID;
-- exact PRODUCT source SHA;
-- LAB workflow SHA and build run;
-- LAB prerelease tag;
-- PRODUCT/test package names;
-- instrumentation runner/test class;
-- target ABI;
-- SHA-256 of PRODUCT APK and androidTest APK;
-- signing-certificate SHA-256.
-
-The LAB GitHub Release is marked **pre-release** and is only a physical test candidate. It is not a PRODUCT release and does not move PRODUCT source ownership out of `mobile-proxy-mish`.
-
-The workflow may additionally upload the same files as a 30-day GitHub Actions artifact for temporary CI evidence. That artifact is not the canonical binary store and may expire; the LAB prerelease is what local execution consumes.
-
-The local machine does **not** need Gradle, Rust, cargo-ndk or Android build tooling for this path. `product_physical_control.py` resolves the latest uncompleted request in #11, waits fail-closed for its READY marker, downloads the matching LAB prerelease assets, independently verifies them, then reuses `product_physical_e3.py` for physical execution.
-
-The physical executor:
-
-```text
-download exact request/source LAB prerelease
--> independently verify candidate.json + both APK SHA-256 values
--> require exactly one SM-A022G / API 30 / armeabi-v7a device
--> install PRODUCT + matching androidTest APK
--> launch PRODUCT
--> allow a bounded Magisk grant window
--> run CellularE3InstrumentedTest through AndroidJUnitRunner
--> keep raw instrumentation output local only
--> post typed RESULT keyed by request comment ID + source SHA
-```
-
-No automatic uninstall is allowed on signing conflicts. `INSTALL_FAILED_UPDATE_INCOMPATIBLE` stops with an explicit action-required error rather than deleting an installed PRODUCT package. A first Magisk grant for `com.mobileproxymish.app` remains an explicit device security action; LAB does not bypass it.
-
-Hosted build failures are terminally recorded as `PRODUCT_PHYSICAL_CANDIDATE=FAILED`, so local `go` never waits forever for a failed build. A posted `PRODUCT_PHYSICAL_RESULT` makes that activation terminal; the same request is not accidentally rerun.
-
-Durable GitHub results contain typed E3 evidence and immutable prerelease identities, not carrier public IPs, DNS addresses, ADB serials or raw instrumentation logs.
-
-## General ready-probe tasks
-
-For a normal ready-probe task `go` performs:
+Typical general flow:
 
 ```text
 update LAB
--> doctor
--> get next GitHub LAB task
--> verify/cache exact product APK when requested
--> download the prebuilt probe matching the exact LAB commit
--> install/run it on the attached phone
--> collect typed result
--> post result to the task Issue
--> close the task
+ -> doctor
+ -> get next LAB task
+ -> download/verify the task's exact probe or diagnostic input
+ -> run against the attached phone
+ -> collect typed result
+ -> submit result
 ```
 
-No Android build is required for ordinary observations.
-
-CI builds the reusable LAB probe once and publishes it as the `mish-lab-ready-probe` artifact. The local tool downloads only the artifact produced for its exact checked-out LAB commit and verifies the APK digest from `probe.json`.
-
-## Useful manual commands
-
-The one-command path is preferred, but general LAB steps remain individually available:
+Useful commands:
 
 ```powershell
 .\mish-lab.ps1 update
@@ -132,34 +83,37 @@ The one-command path is preferred, but general LAB steps remain individually ava
 .\mish-lab.ps1 submit
 ```
 
-`doctor` requires Git, GitHub CLI, ADB and exactly one attached Android device. Java/Gradle/Rust are optional and are needed only when the agent deliberately develops a local experiment.
+`doctor` requires Git, GitHub CLI, ADB and exactly one attached Android device for phone work. Java/Gradle/Rust are optional research tooling, not PRODUCT acceptance prerequisites.
 
-## Execution modes
+## Ready probe
 
-### Ready probe
+The reusable LAB probe is `com.mobileproxymish.lab.devicefacts`.
 
 ```text
-GitHub task
--> prebuilt com.mobileproxymish.lab.devicefacts
--> physical phone
--> typed result
+GitHub LAB CI
+ -> prebuilt ready probe
+ -> local agent downloads exact artifact for the checked-out LAB commit
+ -> physical phone
+ -> typed diagnostic result
 ```
 
-The observer returns normal device/network facts plus a non-mutating cellular socket-bind matrix on the same validated direct cellular `Network` when one is available. It does not toggle radios, change network configuration, connect test sockets, or modify PRODUCT. Network handles, IP addresses and raw logcat stay transient.
+The probe may observe bounded device/network facts. Raw network handles, public addresses and raw logs stay local unless a specific evidence contract requires a redacted projection.
 
-### PRODUCT physical E3
+## Legacy helpers
 
-Uses permanent control Issue #11 as described above. New PRODUCT E3 work must not create a second activation owner. Older per-task PRODUCT E3 support remains only for already-issued legacy tasks during migration.
+Historical `product_physical_e3.py` / related diagnostic code may remain temporarily for already-issued legacy diagnostic tasks. They are not formal E3 authority and may not promote `PROXY_ON_PHONE_WORKING`.
 
-### Product Sandbox
+New formal PRODUCT physical work must use the PRODUCT repository's immutable-RC workflows.
 
-A Product Sandbox task checks out the exact requested `mobile-proxy-mish` source SHA into a disposable task workspace and changes only its Android application ID to:
+## Product Sandbox
+
+A sandbox may deliberately build a disposable application under:
 
 ```text
 com.mobileproxymish.lab.product
 ```
 
-It can then be installed beside the real product. Commands:
+for local research only:
 
 ```powershell
 .\mish-lab.ps1 sandbox prepare
@@ -167,42 +121,23 @@ It can then be installed beside the real product. Commands:
 .\mish-lab.ps1 sandbox run
 ```
 
-Local building is an explicit research exception, not the normal PRODUCT acceptance path.
-
-### Product-target observer
-
-This remains a separately signed test artifact and is only needed when the unresolved fact is specifically tied to the installed production application's signature context.
-
-## Ownership
-
-```text
-mobile-proxy-mish/main
-    sole PRODUCT source of truth
-
-LAB Issue #11 comments
-    exact PRODUCT physical build/test activation log
-
-LAB prerelease physical-e3-req-<comment-id>
-    canonical long-lived candidate binaries + candidate manifest
-
-com.mobileproxymish.app + com.mobileproxymish.app.test
-    exact-source candidate pair derived by hosted LAB CI
-
-com.mobileproxymish.lab.devicefacts
-    reusable prebuilt observer
-
-com.mobileproxymish.lab.product
-    disposable Product Sandbox
-```
+Sandbox bytes are never PRODUCT release or acceptance bytes.
 
 ## Local layout
 
 ```text
 C:\mish-lab\
-  cache\       exact physical candidates and ready probes
-  work\        general task workspaces
-  results\     typed results and local-only raw physical instrumentation
-  locks\       DEVICE-1 lock for physical/general task execution
+  cache\       downloaded probes/diagnostic inputs
+  work\        disposable task workspaces
+  results\     typed results and local-only raw diagnostics
+  locks\       serialized physical-device execution
 ```
 
-Raw phone logs and temporary experiments stay local unless a useful capability is deliberately promoted into reusable LAB infrastructure.
+The guiding rule is:
+
+```text
+one PRODUCT build authority
+one immutable RC identity
+one physical acceptance path
+LAB only consumes/observes
+```
